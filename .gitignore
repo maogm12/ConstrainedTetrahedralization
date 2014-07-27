@@ -24,3 +24,10 @@
 *.sdf
 *.ilk
 *.pdb
+*.suo
+*.opensdf
+*.tlog
+*.log
+*.cache
+*.manifest
+*.lastbuildstate
