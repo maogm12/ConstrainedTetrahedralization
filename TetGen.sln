@@ -1,0 +1,20 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TetGen", "TetGen\TetGen.vcxproj", "{2BB2040D-04DF-46DB-A21E-53E76B9C1F3E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2BB2040D-04DF-46DB-A21E-53E76B9C1F3E}.Debug|Win32.ActiveCfg = Debug|Win32
+		{2BB2040D-04DF-46DB-A21E-53E76B9C1F3E}.Debug|Win32.Build.0 = Debug|Win32
+		{2BB2040D-04DF-46DB-A21E-53E76B9C1F3E}.Release|Win32.ActiveCfg = Release|Win32
+		{2BB2040D-04DF-46DB-A21E-53E76B9C1F3E}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
