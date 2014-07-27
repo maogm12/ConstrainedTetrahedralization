@@ -31,3 +31,4 @@
 *.cache
 *.manifest
 *.lastbuildstate
+*.idb
