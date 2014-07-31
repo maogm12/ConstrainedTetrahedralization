@@ -906,6 +906,11 @@ void Test13()
 	 PlyManager::Output(*m,"hehe.ply");
  }
 
+void testFilterInsertedPoints()
+{
+
+}
+
 int main()
 {
 	//Test13();

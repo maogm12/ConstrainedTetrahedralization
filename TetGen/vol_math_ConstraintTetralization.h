@@ -9,14 +9,130 @@ class RandomVertexGenerator
 private:
 	Box3LFloat box;
 	double unitLen;
+    bool filterInsertedPoints;
+    std::vector<Int16Triple> filterSeeds; // relative filter seeds in box
+
+    static inline bool cmp(const Int16Triple& lh, const Int16Triple& rh)
+    {
+        return lh.X < rh.X || (lh.X == rh.X && lh.Y < rh.Y) ||
+            (lh.X == rh.X && lh.Y == rh.Y && lh.Z < rh.Z);
+    }
+
+    void GenFilterSeedsFromTriangle(const Point3d& p0, const Point3d& p1, const Point3d& p2)
+    {
+        float distX = std::fabs(p0.X - p1.X),
+              distY = std::fabs(p0.Y - p1.Y),
+              distZ = std::fabs(p0.Z - p1.Z),
+              dist = std::sqrt(distX * distX + distY * distY + distZ * distZ);
+        if (dist == 0)
+        {
+            return;
+        }
+
+        int signX = p0.X > p1.X ? -1 : 1,
+            signY = p0.Y > p1.Y ? -1 : 1,
+            signZ = p0.Z > p1.Z ? -1 : 1;
+        float factorX = unitLen * distX / dist,
+              factorY = unitLen * distY / dist,
+              factorZ = unitLen * distZ / dist;
+        Point3d p3; // point in p0-p1
+
+        int total = dist / unitLen;
+        for (int i = 0; i < total; ++i)
+        {
+            p3.X = p0.X + signX * i * factorX;
+            p3.Y = p0.Y + signY * i * factorY;
+            p3.Z = p0.Z + signZ * i * factorZ;
+            GenFilterSeedsFromSegment(p2, p3);
+        }
+    }
+
+    void GenFilterSeedsFromSegment(const Point3d& p0, const Point3d& p1)
+    {
+        GenFilterSeedsFromPoint(p0);
+        GenFilterSeedsFromPoint(p1);
+        float distX = std::fabs(p0.X - p1.X),
+              distY = std::fabs(p0.Y - p1.Y),
+              distZ = std::fabs(p0.Z - p1.Z),
+              dist = std::sqrt(distX * distX + distY * distY + distZ * distZ);
+        if (dist == 0)
+        {
+            return;
+        }
+
+        int signX = p0.X > p1.X ? -1 : 1,
+            signY = p0.Y > p1.Y ? -1 : 1,
+            signZ = p0.Z > p1.Z ? -1 : 1;
+        float factorX = unitLen * distX / dist,
+              factorY = unitLen * distY / dist,
+              factorZ = unitLen * distZ / dist;
+        Point3d inserted;
+
+        int total = dist / unitLen;
+        for (int i = 0; i < total; ++i)
+        {
+            inserted.X = p0.X + signX * i * factorX;
+            inserted.Y = p0.Y + signY * i * factorY;
+            inserted.Z = p0.Z + signZ * i * factorZ;
+            GenFilterSeedsFromPoint(inserted);
+        }
+    }
+
+    void GenFilterSeedsFromPoint(const Point3d& p)
+    {
+        addFilterSeed(uniformPoint(p));
+    }
+
+    bool isValidInsertPoint(const Point3d& p)
+    {
+        return !filterInsertedPoints || !std::binary_search(filterSeeds.begin(), filterSeeds.end(), p, cmp);
+    }
+
+    /**
+     * Round the point to the latest point(relative)
+     */
+    Int16Triple uniformPoint(const Point3d& p)
+    {
+        Int16Triple pointRelative;
+
+        pointRelative.X = (p.X - box.Min3[0] + unitLen * 0.5f) / unitLen;
+        pointRelative.Y = (p.Y - box.Min3[1] + unitLen * 0.5f) / unitLen;
+        pointRelative.Z = (p.Z - box.Min3[2] + unitLen * 0.5f) / unitLen;
+
+        return pointRelative;
+    }
+
+    void addFilterSeed(Int16Triple seed)
+    {
+        std::vector<Int16Triple>::iterator it =
+            std::lower_bound(filterSeeds.begin(), filterSeeds.end(), seed, cmp);
+        if (it == filterSeeds.end() || cmp(seed, *it))
+        {
+            filterSeeds.insert(it, seed);
+        }
+    }
 public:
-	RandomVertexGenerator(double unitLength,Box3LFloat box)
+	RandomVertexGenerator(double unitLength,Box3LFloat box, bool filterInsertedPoints = false)
 	{
 		this->unitLen=unitLength;
 		this->box=box;
+        this->filterInsertedPoints = filterInsertedPoints;
 	}
 	~RandomVertexGenerator(){}
 public:
+    void GenFilterSeeds(const Mesh& m) {
+        filterSeeds.clear();
+        int pi0, pi1, pi2;
+        for (unsigned long i = 0; i < m.Faces.size(); ++i)
+        {
+            Triangle triangle = m.Faces[i];
+            pi0 = triangle.P0Index;
+            pi1 = triangle.P1Index;
+            pi2 = triangle.P2Index;
+            GenFilterSeedsFromTriangle(m.Vertices[pi0], m.Vertices[pi1], m.Vertices[pi2]);
+        }
+    }
+
 	int GenerateInnerPoints(std::vector<Point3d>& plist,std::vector<Int16Triple>& typelist,Int16Triple v)
 	{
 		int count=0;
@@ -40,9 +156,12 @@ public:
 					double zmin=(k+0.5f)*zlen+box.Min3[2];
 					double zmax=((zmin+zlen)>box.Max3[2]?(box.Max3[2]):(zmin+zlen));
 					Point3d p=GetClusterRandomPoints(xmin,xmax,ymin,ymax,zmin,zmax);
-					plist.push_back(p);
-					typelist.push_back(v);
-					count++;
+                    if (isValidInsertPoint(p))
+                    {
+                        plist.push_back(p);
+                        typelist.push_back(v);
+                        count++;
+                    }
 				}
 			}
 		}
@@ -99,21 +218,33 @@ public:
 				double y=GetClusterRandom(ymin,ymax);
 				if(dem==2)
 				{
-					Point3d p(x,y,value);plist.push_back(p);
-					typelist.push_back(v);
-					count++;
+					Point3d p(x,y,value);
+                    if (isValidInsertPoint(p))
+                    {
+                        plist.push_back(p);
+                        typelist.push_back(v);
+                        count++;
+                    }
 				}
 				if(dem==1)
 				{
-					Point3d p(x,value,y);plist.push_back(p);
-					typelist.push_back(v);
-					count++;
+					Point3d p(x,value,y);
+                    if (isValidInsertPoint(p))
+                    {
+                        plist.push_back(p);
+                        typelist.push_back(v);
+                        count++;
+                    }
 				}
 				if(dem==0)
 				{
-					Point3d p(value,x,y);plist.push_back(p);
-					typelist.push_back(v);
-					count++;
+                    Point3d p(value,x,y);
+                    if (isValidInsertPoint(p))
+                    {
+                        plist.push_back(p);
+                        typelist.push_back(v);
+                        count++;
+                    }
 				}
 			}
 		}
@@ -180,42 +311,51 @@ public:
 			if(demParalTo==0)
 			{
 				Point3d p(GetClusterRandom(xmin,xmax),d1,d2);
-				plist.push_back(p);
-				typelist.push_back(v);
-				count++;
+                if (isValidInsertPoint(p))
+                {
+                    plist.push_back(p);
+                    typelist.push_back(v);
+                    count++;
+                }
 			}
 			if(demParalTo==1)
 			{
 				Point3d p(d1,GetClusterRandom(xmin,xmax),d2);
-				plist.push_back(p);
-				typelist.push_back(v);
-				count++;
+                if (isValidInsertPoint(p))
+                {
+                    plist.push_back(p);
+                    typelist.push_back(v);
+                    count++;
+                }
 			}
 			if(demParalTo==2)
 			{
 				Point3d p(d1,d2,GetClusterRandom(xmin,xmax));
-				plist.push_back(p);
-				typelist.push_back(v);
-				count++;
-			}
+                if (isValidInsertPoint(p))
+                {
+                    plist.push_back(p);
+                    typelist.push_back(v);
+                    count++;
+                }
+            }
 
-		}
-		return count;
-	}
+        }
+        return count;
+    }
 private:
-	static double GetRandom(double st,double ed)
-	{
-		/*int r=rand()%1000;
-		double x=r*(ed-st)/1000+st;
-		return x;*/
-		return (st+ed)/2.0f;
-	}
-	static double GetClusterRandom(double st,double ed,double clusterRate=0.35f)
-	{
-		if(clusterRate<0||clusterRate>=0.49f)
-			return (st+ed)/2;
-		else
-		{
+    static double GetRandom(double st,double ed)
+    {
+        /*int r=rand()%1000;
+          double x=r*(ed-st)/1000+st;
+          return x;*/
+        return (st+ed)/2.0f;
+    }
+    static double GetClusterRandom(double st,double ed,double clusterRate=0.35f)
+    {
+        if(clusterRate<0||clusterRate>=0.49f)
+            return (st+ed)/2;
+        else
+        {
 			double len=ed-st;
 			st+=clusterRate*len;
 			ed-=clusterRate*len;
@@ -644,7 +784,8 @@ private:
 		return sum/(faces.size()*3);
 	}
 public:
-	static void BuildInsertedPoints(Box3LFloat box,std::vector<Point3d>& insertedPoints,double ulen,std::vector<Int16Triple>& outFlags)
+	static void BuildInsertedPoints(Box3LFloat box,std::vector<Point3d>& insertedPoints,
+            double ulen,std::vector<Int16Triple>& outFlags, const Mesh& m, bool filterInsertedPoints = false)
 	{
 		insertedPoints.clear();
 		outFlags.clear();
@@ -652,7 +793,13 @@ public:
 		bool insertPoints_Plane=true;
 		bool insertPoints_Line=true;
 		bool insertPoints_Box=false;
-		RandomVertexGenerator rvg(ulen,box);
+
+		RandomVertexGenerator rvg(ulen, box, filterInsertedPoints);
+        if (filterInsertedPoints) {
+            // generate the filter seeds
+            rvg.GenFilterSeeds(m);
+        }
+
 		if(insertPoints_Inner)
 		{
 			rvg.GenerateInnerPoints(insertedPoints,outFlags,Int16Triple(1,1,1));
@@ -702,7 +849,7 @@ public:
 		if(insertion)
 		{
 			double ulen=GetUlen(m.Vertices,m.Faces);
-			TetGen::BuildInsertedPoints(box,insertedPoints,ulen,insertedoptypes);
+			TetGen::BuildInsertedPoints(box,insertedPoints,ulen,insertedoptypes,m,true);
 			TetGen::InitAddin(addin,insertedPoints);
 		}
 		printf("check point1 \n");
